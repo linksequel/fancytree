@@ -113,6 +113,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.0;
+            renderer.outputColorSpace = THREE.SRGBColorSpace; // Ensure correct color space
             container.appendChild(renderer.domElement);
 
             // Post-processing (Bloom)
@@ -332,63 +333,85 @@
             Array.from(files).forEach((file, index) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    const texture = loader.load(e.target.result);
-                    createPhotoMesh(texture);
+                    // Use callback to ensure image data (width/height) is ready
+                    loader.load(e.target.result, (texture) => {
+                        createPhotoMesh(texture);
+                    });
                 };
                 reader.readAsDataURL(file);
             });
         }
 
         function createPhotoMesh(texture) {
-            // Add a border geometry? Simplest is just a slightly larger plane behind it
+            // Correct color space
+            texture.colorSpace = THREE.SRGBColorSpace;
+            
+            // Calculate Aspect Ratio (safe check)
+            const img = texture.image;
+            let aspect = 0.75; // Default 3:4
+            if (img && img.width && img.height) {
+                aspect = img.width / img.height;
+            }
+            
+            const baseSize = 4; 
+            let w, h;
+            if (aspect > 1) {
+                w = baseSize; 
+                h = baseSize / aspect;
+            } else {
+                h = baseSize;
+                w = baseSize * aspect;
+            }
+
             const group = new THREE.Group();
             
-            // Photo Plane
-            const geometry = new THREE.PlaneGeometry(3, 4);
-            const material = new THREE.MeshStandardMaterial({ 
+            // Photo Plane 
+            const geometry = new THREE.PlaneGeometry(w, h);
+            const material = new THREE.MeshBasicMaterial({ 
                 map: texture, 
                 side: THREE.DoubleSide,
                 transparent: true,
                 opacity: 1.0,
-                color: 0xffffff, 
-                emissive: 0x444444, // Moderate self-illumination to prevent darkness
-                roughness: 0.3,
-                metalness: 0.0
+                color: 0xffffff
             });
             const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.z = 0.05; // Slightly in front of border
+            mesh.position.z = 0.05; // Push OUTWARD (local Z)
             group.add(mesh);
             
             // Border Plane (Gold)
-            const borderGeo = new THREE.PlaneGeometry(3.2, 4.2);
+            const borderW = w + 0.2;
+            const borderH = h + 0.2;
+            const borderGeo = new THREE.PlaneGeometry(borderW, borderH);
             const borderMat = new THREE.MeshStandardMaterial({
                 color: 0xD4AF37,
                 metalness: 1.0,
                 roughness: 0.2
             });
             const borderMesh = new THREE.Mesh(borderGeo, borderMat);
+            borderMesh.position.z = 0;
             group.add(borderMesh);
             
             // Calculate Position
             const t = Math.random();
-            // Use a modified getTreePosition that ensures it's on the SURFACE, not inside
-            // Normal getTreePosition fills volume. We want surface.
-            const h = 24;
-            const y = t * h;
-            const r = 12 * (1 - t * 0.9); // Surface radius
+            const yPos = t * 24;
+            const r = 13 * (1 - t * 0.95); // Slightly wider radius to float outside
             const theta = Math.random() * Math.PI * 2;
             const x = r * Math.cos(theta);
             const z = r * Math.sin(theta);
-            const treePos = new THREE.Vector3(x, y + 2, z);
+            const treePos = new THREE.Vector3(x, yPos + 2, z);
             
             const scatteredPos = getScatteredPosition();
             
-            // Start at tree pos
+            // Set Position
             group.position.copy(treePos);
-            group.lookAt(0, treePos.y, 0); 
+            // Orient: Look AWAY from center. 
+            // Current pos is (x,y,z). Center axis is (0,y,0).
+            // Vector from center to pos is (x, 0, z).
+            // We want group +Z to point along (x, 0, z).
+            group.lookAt(x * 2, yPos + 2, z * 2); 
             
             photoData.push({
-                mesh: group, // We control the group now
+                mesh: group,
                 treePos: treePos,
                 scatteredPos: scatteredPos,
                 treeRot: group.quaternion.clone(),
