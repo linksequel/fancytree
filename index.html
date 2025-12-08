@@ -61,14 +61,17 @@
         // --- Global Variables ---
         let scene, camera, renderer, composer, controls;
         let sphereMesh, boxMesh, caneMesh; // InstancedMeshes
+        let glowMesh; // Tiny glowing particles
+        let starMesh; // Top Star
         let photoMeshes = []; // Array of Meshes for photos
-        let sphereData = [], boxData = [], caneData = [];
+        let sphereData = [], boxData = [], caneData = [], glowData = [];
         let photoData = []; 
         let photos = []; // Keep track of photo meshes
         
-        const PARTICLE_COUNT = 800;
-        const BOX_COUNT = 200;
-        const CANE_COUNT = 150;
+        const PARTICLE_COUNT = 1500;
+        const BOX_COUNT = 300;
+        const CANE_COUNT = 200;
+        const GLOW_COUNT = 500;
         
         // State
         const STATE = {
@@ -108,14 +111,15 @@
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.toneMapping = THREE.ReinhardToneMapping;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
             container.appendChild(renderer.domElement);
 
             // Post-processing (Bloom)
             const renderScene = new RenderPass(scene, camera);
             const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.15;
-            bloomPass.strength = 1.0; // Cinematic Glow
+            bloomPass.threshold = 0.2;
+            bloomPass.strength = 1.2; // Adjusted strength
             bloomPass.radius = 0.5;
 
             composer = new EffectComposer(renderer);
@@ -123,24 +127,29 @@
             composer.addPass(bloomPass);
 
             // Lights
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
             scene.add(ambientLight);
 
-            // Main Gold Light
-            const pointLight = new THREE.PointLight(0xD4AF37, 2, 100);
-            pointLight.position.set(10, 20, 10);
+            // Main Gold Light - Warm and Bright
+            const pointLight = new THREE.PointLight(0xFFD700, 2, 100);
+            pointLight.position.set(5, 15, 10);
             scene.add(pointLight);
             
-            // Fill Light
-            const fillLight = new THREE.PointLight(0xffffff, 1, 80);
-            fillLight.position.set(-10, 10, 20);
+            // Fill Light - Cooler to contrast
+            const fillLight = new THREE.PointLight(0xccccff, 1, 80);
+            fillLight.position.set(-10, 5, 20);
             scene.add(fillLight);
+            
+            // Internal Tree Lights (Warm Glow)
+            const innerLight = new THREE.PointLight(0xffaa00, 3, 30);
+            innerLight.position.set(0, 10, 0);
+            scene.add(innerLight);
             
             // Add some random lights for sparkle
             for(let i=0; i<8; i++) {
                 const color = Math.random() > 0.6 ? 0xD4AF37 : 0xff0000;
-                const pl = new THREE.PointLight(color, 1.5, 40);
-                pl.position.set((Math.random()-0.5)*30, Math.random()*25, (Math.random()-0.5)*30);
+                const pl = new THREE.PointLight(color, 1.0, 30);
+                pl.position.set((Math.random()-0.5)*20, Math.random()*25, (Math.random()-0.5)*20);
                 scene.add(pl);
             }
 
@@ -148,7 +157,7 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.autoRotate = true;
-            controls.autoRotateSpeed = 0.5;
+            controls.autoRotateSpeed = 0.8;
             controls.target.set(0, 10, 0);
 
             // Generate Particles
@@ -166,13 +175,15 @@
         }
 
         function getTreePosition(t, radiusBase, height) {
-            // t is 0 to 1
+            // Volume filling cone
             const y = t * height; // 0 to H
-            const r = radiusBase * (1 - t * 0.9); // Cone shape
-            const theta = t * 25 + (Math.random() * 1.0); // Spiral
+            const maxR = radiusBase * (1 - t * 0.95); 
+            // Random radius within maxR for volume
+            const r = Math.sqrt(Math.random()) * maxR; 
+            const theta = t * 40 + (Math.random() * Math.PI * 2); 
             const x = r * Math.cos(theta);
             const z = r * Math.sin(theta);
-            return new THREE.Vector3(x, y + 2, z); // +2 offset y
+            return new THREE.Vector3(x, y + 1, z); 
         }
 
         function getScatteredPosition() {
@@ -189,26 +200,24 @@
             const dummy = new THREE.Object3D();
             const color = new THREE.Color();
 
-            // 1. Spheres (Ornaments - Matte Green & Red)
+            // 1. Spheres (Ornaments - Metallic & Shiny)
             const sphereGeo = new THREE.SphereGeometry(0.35, 16, 16);
             const sphereMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
-                metalness: 0.3,
-                roughness: 0.7 // Matte
+                metalness: 0.7,
+                roughness: 0.2 // Shinier
             });
             sphereMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, PARTICLE_COUNT);
             
             for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const t = i / PARTICLE_COUNT;
+                const t = Math.pow(i / PARTICLE_COUNT, 0.8); // More density at bottom
                 const treePos = getTreePosition(t, 9, 24);
-                treePos.x += (Math.random() - 0.5) * 1.5;
-                treePos.z += (Math.random() - 0.5) * 1.5;
                 const scatteredPos = getScatteredPosition();
 
                 sphereData.push({ treePos, scatteredPos, currentPos: treePos.clone() });
 
                 dummy.position.copy(treePos);
-                dummy.scale.setScalar(0.5 + Math.random() * 1);
+                dummy.scale.setScalar(0.5 + Math.random() * 0.8);
                 dummy.updateMatrix();
                 sphereMesh.setMatrixAt(i, dummy.matrix);
                 
@@ -222,14 +231,18 @@
             const boxGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
             const boxMat = new THREE.MeshStandardMaterial({
                 color: COLOR_GOLD_METAL,
-                metalness: 1.0,
-                roughness: 0.1 // Shiny Gold
+                metalness: 0.9,
+                roughness: 0.1
             });
             boxMesh = new THREE.InstancedMesh(boxGeo, boxMat, BOX_COUNT);
 
             for (let i = 0; i < BOX_COUNT; i++) {
                 const t = Math.random();
-                const treePos = getTreePosition(t, 10, 24);
+                // Ensure boxes are more on the surface
+                const y = t * 24;
+                const r = 10 * (1 - t * 0.95);
+                const theta = Math.random() * Math.PI * 2;
+                const treePos = new THREE.Vector3(r * Math.cos(theta), y + 1, r * Math.sin(theta));
                 const scatteredPos = getScatteredPosition();
 
                 boxData.push({ treePos, scatteredPos, currentPos: treePos.clone() });
@@ -242,34 +255,73 @@
             }
             scene.add(boxMesh);
 
-            // 3. Candy Canes (Cylinders - Red/White)
-            const caneGeo = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 8);
+            // 3. Candy Canes (Cylinders)
+            const caneGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 8);
             const caneMat = new THREE.MeshStandardMaterial({
-                color: 0xFFFFFF,
-                emissive: 0x220000,
-                metalness: 0.1,
-                roughness: 0.5
+                color: 0xFF0000,
+                metalness: 0.3,
+                roughness: 0.4
             });
             caneMesh = new THREE.InstancedMesh(caneGeo, caneMat, CANE_COUNT);
 
             for(let i=0; i<CANE_COUNT; i++) {
                 const t = Math.random();
-                const treePos = getTreePosition(t, 9.5, 24);
+                const treePos = getTreePosition(t, 9, 24);
+                // Push canes slightly outward
+                treePos.x *= 1.1; treePos.z *= 1.1;
                 const scatteredPos = getScatteredPosition();
                 
                 caneData.push({ treePos, scatteredPos, currentPos: treePos.clone() });
                 
                 dummy.position.copy(treePos);
-                dummy.rotation.set(Math.random()*0.5, Math.random()*Math.PI, Math.random()*0.5); // Tilt slightly
+                dummy.rotation.set(Math.random()*0.5, Math.random()*Math.PI, Math.random()*0.5); 
                 dummy.updateMatrix();
                 caneMesh.setMatrixAt(i, dummy.matrix);
                 
-                // Stripe effect simulated by color tint? InstancedMesh only allows 1 color per instance.
-                // Just randomize red/white canes for now.
-                if(i % 2 === 0) color.setHex(0xFF0000); else color.setHex(0xFFFFFF);
+                if(i % 3 === 0) color.setHex(0xFFFFFF); 
+                else if (i % 3 === 1) color.setHex(0xFF0000);
+                else color.setHex(COLOR_GOLD_METAL);
                 caneMesh.setColorAt(i, color);
             }
             scene.add(caneMesh);
+
+            // 4. Glow Dust (Tiny Particles)
+            const glowGeo = new THREE.BufferGeometry();
+            const glowPos = [];
+            for(let i=0; i<GLOW_COUNT; i++) {
+                const t = Math.random();
+                const pos = getTreePosition(t, 12, 26); // Wider cloud
+                glowPos.push(pos.x, pos.y, pos.z);
+                glowData.push({
+                    treePos: pos.clone(),
+                    scatteredPos: getScatteredPosition(),
+                    currentPos: pos.clone(),
+                    speed: 0.02 + Math.random() * 0.05
+                });
+            }
+            glowGeo.setAttribute('position', new THREE.Float32BufferAttribute(glowPos, 3));
+            const glowMat = new THREE.PointsMaterial({
+                color: 0xFFD700,
+                size: 0.2,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+            glowMesh = new THREE.Points(glowGeo, glowMat);
+            scene.add(glowMesh);
+
+            // 5. Top Star
+            const starGeo = new THREE.OctahedronGeometry(1.5, 0);
+            const starMat = new THREE.MeshStandardMaterial({
+                color: 0xFFD700,
+                emissive: 0xFFD700,
+                emissiveIntensity: 0.8,
+                metalness: 1.0,
+                roughness: 0
+            });
+            starMesh = new THREE.Mesh(starGeo, starMat);
+            starMesh.position.set(0, 26, 0);
+            scene.add(starMesh);
         }
 
         // Handle Photo Upload
@@ -288,33 +340,63 @@
         }
 
         function createPhotoMesh(texture) {
+            // Add a border geometry? Simplest is just a slightly larger plane behind it
+            const group = new THREE.Group();
+            
+            // Photo Plane
             const geometry = new THREE.PlaneGeometry(3, 4);
-            const material = new THREE.MeshBasicMaterial({ 
+            const material = new THREE.MeshStandardMaterial({ 
                 map: texture, 
                 side: THREE.DoubleSide,
                 transparent: true,
-                opacity: 0.95
+                opacity: 1.0,
+                color: 0xffffff, 
+                emissive: 0x444444, // Moderate self-illumination to prevent darkness
+                roughness: 0.3,
+                metalness: 0.0
             });
             const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.z = 0.05; // Slightly in front of border
+            group.add(mesh);
             
+            // Border Plane (Gold)
+            const borderGeo = new THREE.PlaneGeometry(3.2, 4.2);
+            const borderMat = new THREE.MeshStandardMaterial({
+                color: 0xD4AF37,
+                metalness: 1.0,
+                roughness: 0.2
+            });
+            const borderMesh = new THREE.Mesh(borderGeo, borderMat);
+            group.add(borderMesh);
+            
+            // Calculate Position
             const t = Math.random();
-            const treePos = getTreePosition(t, 11, 24); // Outer layer
+            // Use a modified getTreePosition that ensures it's on the SURFACE, not inside
+            // Normal getTreePosition fills volume. We want surface.
+            const h = 24;
+            const y = t * h;
+            const r = 12 * (1 - t * 0.9); // Surface radius
+            const theta = Math.random() * Math.PI * 2;
+            const x = r * Math.cos(theta);
+            const z = r * Math.sin(theta);
+            const treePos = new THREE.Vector3(x, y + 2, z);
+            
             const scatteredPos = getScatteredPosition();
             
             // Start at tree pos
-            mesh.position.copy(treePos);
-            mesh.lookAt(0, treePos.y, 0); 
+            group.position.copy(treePos);
+            group.lookAt(0, treePos.y, 0); 
             
             photoData.push({
-                mesh: mesh,
+                mesh: group, // We control the group now
                 treePos: treePos,
                 scatteredPos: scatteredPos,
-                treeRot: mesh.quaternion.clone(),
+                treeRot: group.quaternion.clone(),
                 scatteredRot: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, 0))
             });
             
-            scene.add(mesh);
-            photos.push(mesh);
+            scene.add(group);
+            photos.push(group);
         }
 
         function onWindowResize() {
@@ -380,8 +462,36 @@
                 caneMesh.instanceMatrix.needsUpdate = true;
             }
 
-            // 4. Photos
-            photos.forEach((mesh, i) => {
+            // 4. Glow Particles
+            if (glowMesh) {
+                const positions = glowMesh.geometry.attributes.position.array;
+                for(let i=0; i<GLOW_COUNT; i++) {
+                    const data = glowData[i];
+                    let targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
+                    data.currentPos.lerp(targetPos, lerpSpeed);
+                    
+                    // Add drift
+                    if (targetState !== STATE.CLOSED) {
+                        data.currentPos.y += Math.sin(Date.now() * 0.001 + i) * 0.02;
+                    }
+                    
+                    positions[i*3] = data.currentPos.x;
+                    positions[i*3+1] = data.currentPos.y;
+                    positions[i*3+2] = data.currentPos.z;
+                }
+                glowMesh.geometry.attributes.position.needsUpdate = true;
+            }
+            
+            // 5. Star Rotation
+            if (starMesh) {
+                starMesh.rotation.y += 0.01;
+                starMesh.position.y = THREE.MathUtils.lerp(starMesh.position.y, (targetState === STATE.CLOSED) ? 26 : 50, lerpSpeed);
+                // Hide star in scattered mode? Or let it float high
+                starMesh.scale.setScalar(THREE.MathUtils.lerp(starMesh.scale.x, (targetState === STATE.CLOSED) ? 1 : 0.1, lerpSpeed));
+            }
+
+            // 6. Photos
+            photos.forEach((group, i) => {
                 const data = photoData[i];
                 let targetPos, targetRot;
                 
@@ -390,15 +500,15 @@
                     camera.getWorldDirection(camDir);
                     targetPos = camera.position.clone().add(camDir.multiplyScalar(6));
                     targetRot = camera.quaternion;
-                    mesh.scale.lerp(new THREE.Vector3(2, 2, 2), 0.1);
+                    group.scale.lerp(new THREE.Vector3(2, 2, 2), 0.1);
                 } else {
                     targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
                     targetRot = (targetState === STATE.CLOSED) ? data.treeRot : data.scatteredRot;
-                    mesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+                    group.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
                 }
                 
-                mesh.position.lerp(targetPos, lerpSpeed);
-                mesh.quaternion.slerp(targetRot, lerpSpeed);
+                group.position.lerp(targetPos, lerpSpeed);
+                group.quaternion.slerp(targetRot, lerpSpeed);
             });
             
             if (controls && controls.autoRotate) controls.update();
