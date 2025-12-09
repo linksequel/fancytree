@@ -9,13 +9,16 @@
         #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
         #video-input { position: absolute; top: 10px; left: 10px; width: 160px; height: 120px; z-index: 2; border-radius: 8px; transform: scaleX(-1); opacity: 0.7; }
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; }
-        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); pointer-events: auto; display: flex; gap: 10px; }
-        button, input::file-selector-button {
+        .controls { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); pointer-events: auto; display: flex; gap: 10px; align-items: center; }
+        button, input::file-selector-button, select {
             background: rgba(212, 175, 55, 0.8); border: 1px solid #D4AF37; color: #002200;
             padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: bold;
             transition: all 0.3s;
+            font-family: sans-serif;
+            font-size: 14px;
         }
-        button:hover, input::file-selector-button:hover { background: #D4AF37; box-shadow: 0 0 10px #D4AF37; }
+        button:hover, input::file-selector-button:hover, select:hover { background: #D4AF37; box-shadow: 0 0 10px #D4AF37; }
+        select { outline: none; appearance: none; -webkit-appearance: none; padding-right: 30px; background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23002200%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E"); background-repeat: no-repeat; background-position: right .7em top 50%; background-size: .65em auto; }
         #status { position: absolute; top: 20px; right: 20px; text-align: right; text-shadow: 0 0 5px #D4AF37; }
         .instruction { font-size: 0.9em; opacity: 0.8; margin-bottom: 5px; }
         h1 { margin: 0; font-size: 1.5em; color: #D4AF37; }
@@ -46,6 +49,9 @@
             <div id="gesture-state" style="color: #ff3333; font-weight: bold; margin-top: 5px;">等待手势...</div>
         </div>
         <div class="controls">
+            <select id="camera-select" title="选择摄像头">
+                <option value="" disabled selected>寻找摄像头...</option>
+            </select>
             <input type="file" id="upload-photo" accept="image/*" multiple style="display:none">
             <button onclick="document.getElementById('upload-photo').click()">📸 上传照片</button>
         </div>
@@ -75,6 +81,11 @@
         let glowData = [];
         let photoData = []; 
         let photos = [];
+        
+        // MediaPipe & Camera
+        let hands;
+        let videoStream;
+        let animationFrameId;
         
         const PARTICLE_COUNT = 3000; // Total spheres split across types
         const BOX_COUNT = 500;
@@ -615,10 +626,12 @@
             if (composer) composer.render();
         }
 
-        // --- MediaPipe Integration ---
-        function initMediaPipe() {
+        // --- MediaPipe Integration & Camera Handling ---
+        async function initMediaPipe() {
             const videoElement = document.getElementById('video-input');
-            const hands = new Hands({locateFile: (file) => {
+            
+            // Initialize Hands
+            hands = new Hands({locateFile: (file) => {
                 return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
             }});
             
@@ -630,15 +643,97 @@
             });
 
             hands.onResults(onResults);
+            
+            // Initialize Camera List
+            await getCameras();
+        }
 
-            const camera = new Camera(videoElement, {
-                onFrame: async () => {
-                    await hands.send({image: videoElement});
-                },
-                width: 320,
-                height: 240
-            });
-            camera.start();
+        async function getCameras() {
+            try {
+                // Request permission first to get labels
+                const initialStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                // Stop the initial stream immediately, we just needed permission/labels
+                initialStream.getTracks().forEach(track => track.stop());
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                const cameraSelect = document.getElementById('camera-select');
+                
+                cameraSelect.innerHTML = '';
+                
+                if (videoDevices.length === 0) {
+                    const option = document.createElement('option');
+                    option.text = "未找到摄像头";
+                    cameraSelect.add(option);
+                    return;
+                }
+
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `摄像头 ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+                
+                cameraSelect.onchange = () => {
+                    startCamera(cameraSelect.value);
+                };
+
+                // Select the last used camera or the first available one
+                // On desktop with external cam, it might be the second one, so listing them is key.
+                if (videoDevices.length > 0) {
+                    // Default to the first one
+                    startCamera(videoDevices[0].deviceId);
+                }
+
+            } catch (err) {
+                console.error("Error enumerating devices:", err);
+                const cameraSelect = document.getElementById('camera-select');
+                cameraSelect.innerHTML = '<option>摄像头访问受限</option>';
+            }
+        }
+
+        async function startCamera(deviceId) {
+            const videoElement = document.getElementById('video-input');
+            
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                }
+            };
+            
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoElement.srcObject = videoStream;
+                videoElement.onloadedmetadata = () => {
+                    videoElement.play();
+                    processVideo();
+                };
+            } catch (err) {
+                console.error("Error starting camera:", err);
+                alert("无法启动摄像头，请重试或选择其他设备");
+            }
+        }
+
+        async function processVideo() {
+            const videoElement = document.getElementById('video-input');
+            
+            if (hands && videoElement.readyState >= 2) {
+                await hands.send({image: videoElement});
+            }
+            
+            if (!videoElement.paused && !videoElement.ended) {
+                animationFrameId = requestAnimationFrame(processVideo);
+            }
         }
 
         function onResults(results) {
