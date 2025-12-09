@@ -192,7 +192,7 @@
             // Post-processing (Bloom)
             const renderScene = new RenderPass(scene, camera);
             const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.1; // Lower threshold to make more things glow
+            bloomPass.threshold = 0.25; // Increase threshold to prevent non-emissive objects (like photos) from glowing too much
             bloomPass.strength = 1.0; 
             bloomPass.radius = 0.5;
 
@@ -408,7 +408,7 @@
                 color: 0xffffff, // White base for texture
                 map: stripedTex,
                 metalness: 0.1,
-                roughness: 0.5,
+                roughness: 0.3,
                 emissive: 0x880000, // Red Glow
                 emissiveIntensity: 0.5
             });
@@ -642,12 +642,14 @@
             
             // Photo Plane 
             const geometry = new THREE.PlaneGeometry(w, h);
-            const material = new THREE.MeshBasicMaterial({ 
+            const material = new THREE.MeshStandardMaterial({ 
                 map: texture, 
                 side: THREE.DoubleSide,
                 transparent: true,
                 opacity: 1.0,
-                color: 0xffffff
+                color: 0xffffff, // 恢复白色以显示照片原色 (Restore white to show original photo colors)
+                roughness: 0.5,  // 半哑光质感，模拟照片纸 (Semi-matte finish)
+                metalness: 0.0
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.z = 0.05; // Push OUTWARD (local Z)
