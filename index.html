@@ -74,6 +74,9 @@
         let starMesh;
         let photoMeshes = [];
         
+        // Spiral
+        let spiralMesh;
+
         // Data Arrays
         let sphereMatteData = [], sphereGoldData = [], sphereRedData = [];
         let boxGoldData = [], boxRedData = [];
@@ -314,49 +317,53 @@
 
             // --- 1. Spheres (Foliage & Ornaments) ---
             
-            // A. Pine Leaves (Tetrahedron for jagged look)
-            // Use Tetrahedron to simulate pine needle clusters
-            const leafGeo = new THREE.TetrahedronGeometry(0.6, 0); 
-            const matMatte = new THREE.MeshStandardMaterial({
-                color: COLOR_GREEN_MATTE,
-                roughness: 0.8, 
-                metalness: 0.1,
-                emissive: COLOR_GREEN_MATTE, // Self-illuminated to show color
-                emissiveIntensity: 0.4, // Visible green glow
-                flatShading: true
-            });
-            // Increase foliage ratio
-            const countMatte = Math.floor(PARTICLE_COUNT * 0.75); 
-            sphereMatteMesh = new THREE.InstancedMesh(leafGeo, matMatte, countMatte);
-            // Allow random rotation for leaves to look chaotic/natural
-            fillData(sphereMatteMesh, sphereMatteData, countMatte, [0.8, 1.4], true); 
-
-            // B. Gold (Ornaments)
-            const sphereGeo = new THREE.SphereGeometry(0.45, 32, 32);
-            const matGold = new THREE.MeshStandardMaterial({
+            // A. Foliage Replacement -> Golden Sparkles (Light Points)
+            // Replaced dark green matte with glowing gold particles to remove "dark objects"
+            const sparkleGeo = new THREE.SphereGeometry(0.15, 8, 8); 
+            const matSparkle = new THREE.MeshStandardMaterial({
                 color: COLOR_GOLD_METAL,
-                roughness: 0.2,
+                roughness: 0.2, 
                 metalness: 1.0,
-                emissive: COLOR_GOLD_METAL,
-                emissiveIntensity: 0.8, // High glow
-                map: createNoiseTexture('#FFD700')
+                emissive: COLOR_GOLD_METAL, 
+                emissiveIntensity: 1.5, // Soft glow
+                transparent: true,
+                opacity: 0.8
+            });
+            // Keep the count high to define the tree shape with light
+            const countMatte = Math.floor(PARTICLE_COUNT * 0.75); 
+            sphereMatteMesh = new THREE.InstancedMesh(sparkleGeo, matSparkle, countMatte);
+            fillData(sphereMatteMesh, sphereMatteData, countMatte, [0.5, 1.0]); 
+
+            // B. Gold (Lights - Real Christmas Lights)
+            // Smaller, glowing bulbs
+            const lightGeo = new THREE.SphereGeometry(0.12, 16, 16); 
+            const matLight = new THREE.MeshStandardMaterial({
+                color: 0xffcc00, // Warm yellow light
+                roughness: 0.4,
+                metalness: 0.0,
+                emissive: 0xffcc00,
+                emissiveIntensity: 4.0, // Strong glow for bloom effect
+                toneMapped: false // Keep colors bright
             });
             const countGold = Math.floor(PARTICLE_COUNT * 0.15);
-            sphereGoldMesh = new THREE.InstancedMesh(sphereGeo, matGold, countGold);
-            fillData(sphereGoldMesh, sphereGoldData, countGold, [0.8, 1.2]); // Slightly larger ornaments
+            sphereGoldMesh = new THREE.InstancedMesh(lightGeo, matLight, countGold);
+            fillData(sphereGoldMesh, sphereGoldData, countGold, [0.8, 1.2]); 
 
-            // C. Red (Ornaments)
-            const matRed = new THREE.MeshStandardMaterial({
-                color: COLOR_RED_CHRISTMAS,
-                roughness: 0.3,
-                metalness: 0.6,
-                emissive: COLOR_RED_CHRISTMAS,
-                emissiveIntensity: 0.8, // High glow
-                map: createNoiseTexture('#C41E3A')
+            // C. Red (Ornaments - Real Shiny Baubles)
+            // Larger, reflective, glossy
+            const ornamentGeo = new THREE.SphereGeometry(0.45, 32, 32);
+            const matOrnament = new THREE.MeshPhysicalMaterial({
+                color: 0xaa0000, // Deep Christmas Red
+                roughness: 0.15,  // Smooth
+                metalness: 0.5,   // Semi-metallic
+                clearcoat: 1.0,   // Glossy polish
+                clearcoatRoughness: 0.1,
+                reflectivity: 1.0,
+                specularIntensity: 1.0
             });
             const countRed = PARTICLE_COUNT - countMatte - countGold;
-            sphereRedMesh = new THREE.InstancedMesh(sphereGeo, matRed, countRed);
-            fillData(sphereRedMesh, sphereRedData, countRed, [0.8, 1.2]); // Slightly larger ornaments
+            sphereRedMesh = new THREE.InstancedMesh(ornamentGeo, matOrnament, countRed);
+            fillData(sphereRedMesh, sphereRedData, countRed, [0.8, 1.5]); // Varied sizes for ornaments
 
 
             // --- 2. Boxes (Gifts - Gold & Red) ---
@@ -450,6 +457,52 @@
             starMesh = new THREE.Mesh(starGeo, starMat);
             starMesh.position.set(0, 26, 0);
             scene.add(starMesh);
+
+            // --- 6. Spiral Runner (Golden Marquee) ---
+            const spiralPoints = [];
+            const spiralHeight = 25;
+            const turns = 6;
+            for (let i = 0; i <= 100; i++) {
+                const t = i / 100;
+                const angle = t * Math.PI * 2 * turns;
+                const radius = 10 * (1 - t * 0.9) + 1; // Tapering radius
+                const x = Math.cos(angle) * radius;
+                const z = Math.sin(angle) * radius;
+                const y = t * spiralHeight + 1;
+                spiralPoints.push(new THREE.Vector3(x, y, z));
+            }
+            const spiralCurve = new THREE.CatmullRomCurve3(spiralPoints);
+            const tubeGeo = new THREE.TubeGeometry(spiralCurve, 100, 0.3, 8, false);
+            
+            // Texture for flow effect
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            // Gradient stripes
+            const gradient = ctx.createLinearGradient(0, 0, 128, 0);
+            gradient.addColorStop(0, 'rgba(255, 215, 0, 0)');
+            gradient.addColorStop(0.5, 'rgba(255, 215, 0, 1)'); // Gold center
+            gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 128, 32);
+            
+            const spiralTex = new THREE.CanvasTexture(canvas);
+            spiralTex.wrapS = THREE.RepeatWrapping;
+            spiralTex.wrapT = THREE.RepeatWrapping;
+            spiralTex.repeat.set(5, 1); // 5 repeating segments
+            
+            const spiralMat = new THREE.MeshBasicMaterial({
+                map: spiralTex,
+                transparent: true,
+                opacity: 0.8,
+                color: 0xFFD700,
+                side: THREE.DoubleSide,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            
+            spiralMesh = new THREE.Mesh(tubeGeo, spiralMat);
+            scene.add(spiralMesh);
         }
 
         // Handle Photo Upload
@@ -618,6 +671,14 @@
             // Update all groups
             updateGroup(sphereMatteMesh, sphereMatteData);
             updateGroup(sphereGoldMesh, sphereGoldData);
+            
+            // Twinkle Lights Animation
+            if (sphereGoldMesh && sphereGoldMesh.material) {
+                // Breathing glow effect
+                const time = Date.now() * 0.003;
+                sphereGoldMesh.material.emissiveIntensity = 3.0 + Math.sin(time) * 1.5;
+            }
+
             updateGroup(sphereRedMesh, sphereRedData);
             
             updateGroup(boxGoldMesh, boxGoldData);
@@ -651,6 +712,16 @@
                 starMesh.rotation.y += 0.01;
                 starMesh.position.y = THREE.MathUtils.lerp(starMesh.position.y, (targetState === STATE.CLOSED) ? 26 : 50, lerpSpeed);
                 starMesh.scale.setScalar(THREE.MathUtils.lerp(starMesh.scale.x, (targetState === STATE.CLOSED) ? 1 : 0.1, lerpSpeed));
+            }
+
+            // 6. Spiral Animation
+            if (spiralMesh) {
+                spiralMesh.material.map.offset.x -= 0.01; // Move texture
+                
+                // Show only in Tree Mode
+                const targetScale = (targetState === STATE.CLOSED) ? 1 : 0;
+                spiralMesh.visible = spiralMesh.scale.x > 0.01;
+                spiralMesh.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), lerpSpeed);
             }
             
             // 6. Photos
