@@ -60,18 +60,26 @@
 
         // --- Global Variables ---
         let scene, camera, renderer, composer, controls;
-        let sphereMesh, boxMesh, caneMesh; // InstancedMeshes
-        let glowMesh; // Tiny glowing particles
-        let starMesh; // Top Star
-        let photoMeshes = []; // Array of Meshes for photos
-        let sphereData = [], boxData = [], caneData = [], glowData = [];
-        let photoData = []; 
-        let photos = []; // Keep track of photo meshes
+        // Particle Meshes
+        let sphereGreenMesh, sphereRedMesh, sphereGoldMesh, sphereMatteMesh;
+        let boxMesh;
+        let caneGreenMesh, caneGoldMesh;
+        let glowMesh; 
+        let starMesh;
+        let photoMeshes = [];
         
-        const PARTICLE_COUNT = 1500;
-        const BOX_COUNT = 300;
-        const CANE_COUNT = 200;
-        const GLOW_COUNT = 500;
+        // Data Arrays
+        let sphereGreenData = [], sphereRedData = [], sphereGoldData = [], sphereMatteData = [];
+        let boxData = [];
+        let caneGreenData = [], caneGoldData = [];
+        let glowData = [];
+        let photoData = []; 
+        let photos = [];
+        
+        const PARTICLE_COUNT = 3000; // Total spheres split across types
+        const BOX_COUNT = 500;
+        const CANE_COUNT = 400;
+        const GLOW_COUNT = 800;
         
         // State
         const STATE = {
@@ -90,9 +98,11 @@
         // Colors
         // Matte Green, Metallic Gold, Christmas Red
         const COLOR_GREEN_MATTE = 0x2E5936;
+        const COLOR_GREEN_BRIGHT = 0x32CD32; // Lime Green
         const COLOR_GOLD_METAL = 0xD4AF37;
-        const COLOR_RED = 0xAA0000;
-        const COLORS = [COLOR_GREEN_MATTE, COLOR_GREEN_MATTE, COLOR_RED, COLOR_RED, 0xffffff];
+        const COLOR_RED_BRIGHT = 0xFF0000; // Bright Red
+        // Mix of dark green, bright green, bright red, and gold
+        const COLORS = [COLOR_GREEN_MATTE, COLOR_GREEN_BRIGHT, COLOR_RED_BRIGHT, COLOR_RED_BRIGHT, COLOR_GOLD_METAL];
 
         // --- Initialization ---
         function init() {
@@ -201,45 +211,68 @@
             const dummy = new THREE.Object3D();
             const color = new THREE.Color();
 
-            // 1. Spheres (Ornaments - Metallic & Shiny)
-            const sphereGeo = new THREE.SphereGeometry(0.35, 16, 16);
-            const sphereMat = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                metalness: 0.7,
-                roughness: 0.2 // Shinier
-            });
-            sphereMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, PARTICLE_COUNT);
-            
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const t = Math.pow(i / PARTICLE_COUNT, 0.8); // More density at bottom
-                const treePos = getTreePosition(t, 9, 24);
-                const scatteredPos = getScatteredPosition();
-
-                sphereData.push({ treePos, scatteredPos, currentPos: treePos.clone() });
-
-                dummy.position.copy(treePos);
-                dummy.scale.setScalar(0.5 + Math.random() * 0.8);
-                dummy.updateMatrix();
-                sphereMesh.setMatrixAt(i, dummy.matrix);
-                
-                // Colors
-                color.setHex(COLORS[Math.floor(Math.random() * COLORS.length)]);
-                sphereMesh.setColorAt(i, color);
+            // --- 1. Spheres (Ornaments) ---
+            // Helper to create sphere mesh
+            function createSphereMesh(colorHex, emissiveColor, emissiveIntensity, roughness) {
+                const geo = new THREE.SphereGeometry(0.45, 16, 16);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: colorHex,
+                    emissive: emissiveColor,
+                    emissiveIntensity: emissiveIntensity,
+                    metalness: 0.8,
+                    roughness: roughness
+                });
+                return new THREE.InstancedMesh(geo, mat, PARTICLE_COUNT / 4); // Approx count
             }
-            scene.add(sphereMesh);
 
-            // 2. Boxes (Gifts - Metallic Gold)
-            const boxGeo = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            // A. Bright Green (Glowing)
+            sphereGreenMesh = createSphereMesh(COLOR_GREEN_BRIGHT, COLOR_GREEN_BRIGHT, 0.6, 0.15);
+            // B. Red (Glowing)
+            sphereRedMesh = createSphereMesh(COLOR_RED_BRIGHT, COLOR_RED_BRIGHT, 0.6, 0.15);
+            // C. Gold (Glowing)
+            sphereGoldMesh = createSphereMesh(COLOR_GOLD_METAL, COLOR_GOLD_METAL, 0.4, 0.1);
+            // D. Matte Green (Background - Low Glow)
+            sphereMatteMesh = createSphereMesh(COLOR_GREEN_MATTE, 0x000000, 0.0, 0.6);
+
+            // Distribute Particles
+            const countPerType = PARTICLE_COUNT / 4;
+            
+            function fillSphereData(mesh, dataArray, count) {
+                for (let i = 0; i < count; i++) {
+                    const t = Math.pow(Math.random(), 0.8); // Randomize t slightly differently
+                    const treePos = getTreePosition(t, 9, 24);
+                    const scatteredPos = getScatteredPosition();
+                    dataArray.push({ treePos, scatteredPos, currentPos: treePos.clone() });
+
+                    dummy.position.copy(treePos);
+                    dummy.scale.setScalar(0.7 + Math.random() * 0.8);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                    
+                    // No need to set instanceColor since material is colored per mesh
+                }
+                scene.add(mesh);
+            }
+
+            fillSphereData(sphereGreenMesh, sphereGreenData, countPerType);
+            fillSphereData(sphereRedMesh, sphereRedData, countPerType);
+            fillSphereData(sphereGoldMesh, sphereGoldData, countPerType);
+            fillSphereData(sphereMatteMesh, sphereMatteData, countPerType);
+
+
+            // --- 2. Boxes (Gifts - Metallic Gold) ---
+            const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
             const boxMat = new THREE.MeshStandardMaterial({
                 color: COLOR_GOLD_METAL,
-                metalness: 0.9,
+                emissive: COLOR_GOLD_METAL,
+                emissiveIntensity: 0.2, // Slight glow
+                metalness: 1.0,
                 roughness: 0.1
             });
             boxMesh = new THREE.InstancedMesh(boxGeo, boxMat, BOX_COUNT);
 
             for (let i = 0; i < BOX_COUNT; i++) {
                 const t = Math.random();
-                // Ensure boxes are more on the surface
                 const y = t * 24;
                 const r = 10 * (1 - t * 0.95);
                 const theta = Math.random() * Math.PI * 2;
@@ -250,43 +283,61 @@
 
                 dummy.position.copy(treePos);
                 dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
-                dummy.scale.setScalar(0.6 + Math.random() * 0.6);
+                dummy.scale.setScalar(0.8 + Math.random() * 0.8);
                 dummy.updateMatrix();
                 boxMesh.setMatrixAt(i, dummy.matrix);
             }
             scene.add(boxMesh);
 
-            // 3. Candy Canes (Cylinders)
-            const caneGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 8);
-            const caneMat = new THREE.MeshStandardMaterial({
-                color: 0xFF0000,
+            // --- 3. Candy Canes (Green & Gold) ---
+            const caneGeo = new THREE.CylinderGeometry(0.12, 0.12, 1.8, 8);
+            
+            // Green Cane Material (Glowing)
+            const caneGreenMat = new THREE.MeshStandardMaterial({
+                color: COLOR_GREEN_BRIGHT,
+                emissive: COLOR_GREEN_BRIGHT,
+                emissiveIntensity: 0.5,
                 metalness: 0.3,
                 roughness: 0.4
             });
-            caneMesh = new THREE.InstancedMesh(caneGeo, caneMat, CANE_COUNT);
+            // Gold Cane Material (Glowing)
+            const caneGoldMat = new THREE.MeshStandardMaterial({
+                color: COLOR_GOLD_METAL,
+                emissive: COLOR_GOLD_METAL,
+                emissiveIntensity: 0.3,
+                metalness: 0.8,
+                roughness: 0.2
+            });
 
-            for(let i=0; i<CANE_COUNT; i++) {
-                const t = Math.random();
-                const treePos = getTreePosition(t, 9, 24);
-                // Push canes slightly outward
-                treePos.x *= 1.1; treePos.z *= 1.1;
-                const scatteredPos = getScatteredPosition();
-                
-                caneData.push({ treePos, scatteredPos, currentPos: treePos.clone() });
-                
-                dummy.position.copy(treePos);
-                dummy.rotation.set(Math.random()*0.5, Math.random()*Math.PI, Math.random()*0.5); 
-                dummy.updateMatrix();
-                caneMesh.setMatrixAt(i, dummy.matrix);
-                
-                if(i % 3 === 0) color.setHex(0xFFFFFF); 
-                else if (i % 3 === 1) color.setHex(0xFF0000);
-                else color.setHex(COLOR_GOLD_METAL);
-                caneMesh.setColorAt(i, color);
+            // Split counts: 1/3 Green, 2/3 Gold
+            const caneGreenCount = Math.floor(CANE_COUNT / 3);
+            const caneGoldCount = CANE_COUNT - caneGreenCount;
+
+            caneGreenMesh = new THREE.InstancedMesh(caneGeo, caneGreenMat, caneGreenCount);
+            caneGoldMesh = new THREE.InstancedMesh(caneGeo, caneGoldMat, caneGoldCount);
+
+            function fillCaneData(mesh, dataArray, count) {
+                for(let i=0; i<count; i++) {
+                    const t = Math.random();
+                    const treePos = getTreePosition(t, 9, 24);
+                    treePos.x *= 1.15; treePos.z *= 1.15; 
+                    const scatteredPos = getScatteredPosition();
+                    
+                    dataArray.push({ treePos, scatteredPos, currentPos: treePos.clone() });
+                    
+                    dummy.position.copy(treePos);
+                    dummy.rotation.set(Math.random()*0.5, Math.random()*Math.PI, Math.random()*0.5); 
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                }
+                scene.add(mesh);
             }
-            scene.add(caneMesh);
 
-            // 4. Glow Dust (Tiny Particles)
+            fillCaneData(caneGreenMesh, caneGreenData, caneGreenCount);
+            fillCaneData(caneGoldMesh, caneGoldData, caneGoldCount);
+
+
+            // --- 4. Glow Dust ---
             const glowGeo = new THREE.BufferGeometry();
             const glowPos = [];
             for(let i=0; i<GLOW_COUNT; i++) {
@@ -311,7 +362,7 @@
             glowMesh = new THREE.Points(glowGeo, glowMat);
             scene.add(glowMesh);
 
-            // 5. Top Star
+            // --- 5. Top Star ---
             const starGeo = new THREE.OctahedronGeometry(1.5, 0);
             const starMat = new THREE.MeshStandardMaterial({
                 color: 0xFFD700,
@@ -439,32 +490,54 @@
                 currentState = targetState; 
             }
             
-            // 1. Spheres
-            if (sphereMesh) {
-                for (let i = 0; i < PARTICLE_COUNT; i++) {
-                    const data = sphereData[i];
-                    let targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
-                    data.currentPos.lerp(targetPos, lerpSpeed);
-                    dummy.position.copy(data.currentPos);
-                    if (targetState !== STATE.CLOSED) {
-                        dummy.position.y += Math.sin(Date.now() * 0.001 + i * 0.1) * 0.03;
+            // 1. Update Particles (Spheres)
+            function updateSphereGroup(mesh, dataArray) {
+                if (mesh) {
+                    for (let i = 0; i < dataArray.length; i++) {
+                        const data = dataArray[i];
+                        let targetPos;
+                        
+                        if (targetState === STATE.CLOSED) {
+                            targetPos = data.treePos;
+                        } else {
+                            targetPos = data.scatteredPos;
+                        }
+                        
+                        // Lerp current position
+                        data.currentPos.lerp(targetPos, lerpSpeed);
+                        
+                        dummy.position.copy(data.currentPos);
+                        // In scattered state, add some floating motion
+                        if (targetState !== STATE.CLOSED) {
+                            dummy.position.y += Math.sin(Date.now() * 0.001 + i) * 0.02;
+                        }
+                        
+                        dummy.scale.setScalar(targetState === STATE.CLOSED ? 0.7 : 1.0);
+                        dummy.updateMatrix();
+                        mesh.setMatrixAt(i, dummy.matrix);
                     }
-                    dummy.scale.setScalar(targetState === STATE.CLOSED ? 0.5 : 0.8);
-                    dummy.updateMatrix();
-                    sphereMesh.setMatrixAt(i, dummy.matrix);
+                    mesh.instanceMatrix.needsUpdate = true;
                 }
-                sphereMesh.instanceMatrix.needsUpdate = true;
             }
+
+            updateSphereGroup(sphereGreenMesh, sphereGreenData);
+            updateSphereGroup(sphereRedMesh, sphereRedData);
+            updateSphereGroup(sphereGoldMesh, sphereGoldData);
+            updateSphereGroup(sphereMatteMesh, sphereMatteData);
             
-            // 2. Boxes
+            // 2. Update Boxes
             if (boxMesh) {
-                for (let i = 0; i < BOX_COUNT; i++) {
+                for (let i = 0; i < boxData.length; i++) {
                     const data = boxData[i];
                     let targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
+                    
                     data.currentPos.lerp(targetPos, lerpSpeed);
+                    
                     dummy.position.copy(data.currentPos);
-                    dummy.rotation.x += 0.01;
-                    dummy.rotation.y += 0.01;
+                    if (targetState !== STATE.CLOSED) {
+                        dummy.rotation.x += 0.01;
+                        dummy.rotation.y += 0.01;
+                    }
                     dummy.updateMatrix();
                     boxMesh.setMatrixAt(i, dummy.matrix);
                 }
@@ -472,18 +545,22 @@
             }
             
             // 3. Canes
-            if (caneMesh) {
-                for(let i = 0; i < CANE_COUNT; i++) {
-                    const data = caneData[i];
-                    let targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
-                    data.currentPos.lerp(targetPos, lerpSpeed);
-                    dummy.position.copy(data.currentPos);
-                    dummy.rotation.z += 0.01; 
-                    dummy.updateMatrix();
-                    caneMesh.setMatrixAt(i, dummy.matrix);
+            function updateCaneGroup(mesh, dataArray) {
+                if (mesh) {
+                    for(let i = 0; i < dataArray.length; i++) {
+                        const data = dataArray[i];
+                        let targetPos = (targetState === STATE.CLOSED) ? data.treePos : data.scatteredPos;
+                        data.currentPos.lerp(targetPos, lerpSpeed);
+                        dummy.position.copy(data.currentPos);
+                        dummy.rotation.z += 0.01; 
+                        dummy.updateMatrix();
+                        mesh.setMatrixAt(i, dummy.matrix);
+                    }
+                    mesh.instanceMatrix.needsUpdate = true;
                 }
-                caneMesh.instanceMatrix.needsUpdate = true;
             }
+            updateCaneGroup(caneGreenMesh, caneGreenData);
+            updateCaneGroup(caneGoldMesh, caneGoldData);
 
             // 4. Glow Particles
             if (glowMesh) {
